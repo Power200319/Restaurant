@@ -1,0 +1,16 @@
+/* Custom styles can be added here */
+body {
+  font-family: 'Roboto', sans-serif;
+}
+
+.menu-item-card {
+  margin-bottom: 10px; /* Add some space between items */
+  border-radius: 0.25rem; /* Match Bootstrap's default card border-radius */
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); /* Subtle shadow */
+  transition: all 0.2s ease-in-out; /* Smooth transition for hover effect */
+}
+
+.menu-item-card:hover {
+  transform: translateY(-3px); /* Lift effect on hover */
+  box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.1); /* More pronounced shadow on hover */
+}
