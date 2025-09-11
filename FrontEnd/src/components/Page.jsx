@@ -12,6 +12,7 @@ const Page = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [invoiceData, setInvoiceData] = useState({
     items: [],
     total: 0,
@@ -19,8 +20,10 @@ const Page = () => {
     invoiceNumber: '',
     orderId: null,
     qrUrl: null,
-    paymentData: null
+    paymentData: null,
+    paymentStatus: 'pending'
   });
+  const [paymentCheckInterval, setPaymentCheckInterval] = useState(null);
 
   useEffect(() => {
     console.log('Fetching menu items from:', `${API_BASE}/menu-items`);
@@ -113,35 +116,35 @@ const Page = () => {
       return response.json();
     })
     .then(data => {
-      console.log('Order created:', data);
-      // Generate QR payment data
-      const qrData = {
-        orderId: data.id,
-        amount: data.total,
-        currency: 'USD',
-        timestamp: new Date().toISOString()
-      };
+       console.log('Order created:', data);
 
-      // Create QR code URL (using a free QR code service)
-      const qrText = `Payment:${JSON.stringify(qrData)}`;
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrText)}`;
+       // Generate QR code using backend
+       return fetch(`${API_BASE}/payments/${data.id}/qr-code`)
+         .then(response => response.json())
+         .then(qrResponse => {
+           console.log('QR code generated:', qrResponse);
 
-      // Update invoice data with QR and order details
-      setInvoiceData({
-        items: cart,
-        total: data.total,
-        date: new Date().toLocaleString(),
-        invoiceNumber: Math.floor(Math.random() * 1000000),
-        orderId: data.id,
-        qrUrl: qrUrl,
-        paymentData: qrData
-      });
+           // Update invoice data with QR and order details
+           setInvoiceData({
+             items: cart,
+             total: data.total,
+             date: new Date().toLocaleString(),
+             invoiceNumber: Math.floor(Math.random() * 1000000),
+             orderId: data.id,
+             qrUrl: qrResponse.qr_url,
+             paymentData: qrResponse.qr_data,
+             paymentStatus: 'pending'
+           });
 
-      setCart([]);
-      setShowInvoice(true);
-      setShowOrder(false);
-      console.log('States updated: showInvoice=true, showOrder=false');
-    })
+           setCart([]);
+           setShowInvoice(true);
+           setShowOrder(false);
+           console.log('States updated: showInvoice=true, showOrder=false');
+
+           // Start checking payment status
+           startPaymentStatusCheck(data.id);
+         });
+     })
     .catch(error => {
       console.error('Error creating order:', error);
       alert('Error creating order: ' + error.message);
@@ -156,6 +159,90 @@ const Page = () => {
       setShowFeedback(false);
     }
   };
+
+  const startPaymentStatusCheck = (orderId) => {
+    // Clear any existing interval
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+    }
+
+    // Check payment status every 5 seconds
+    const interval = setInterval(() => {
+      checkPaymentStatus(orderId);
+    }, 5000);
+
+    setPaymentCheckInterval(interval);
+  };
+
+  const checkPaymentStatus = async (orderId) => {
+    try {
+      const response = await fetch(`${API_BASE}/payments/${orderId}/status`);
+      const data = await response.json();
+
+      if (data.payment_status === 'paid') {
+        // Payment completed
+        setInvoiceData(prev => ({
+          ...prev,
+          paymentStatus: 'paid'
+        }));
+
+        // Clear the interval
+        if (paymentCheckInterval) {
+          clearInterval(paymentCheckInterval);
+          setPaymentCheckInterval(null);
+        }
+
+        // Show success message
+        alert('Payment received successfully! Your order is being prepared.');
+      }
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+    }
+  };
+
+  const testPaymentConfirmation = async (orderId) => {
+    try {
+      const response = await fetch(`${API_BASE}/payments/test-confirm/${orderId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ order_id: orderId })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update payment status
+        setInvoiceData(prev => ({
+          ...prev,
+          paymentStatus: 'paid'
+        }));
+
+        // Clear the interval
+        if (paymentCheckInterval) {
+          clearInterval(paymentCheckInterval);
+          setPaymentCheckInterval(null);
+        }
+
+        alert('Test payment confirmed! Your order is being prepared.');
+      } else {
+        alert('Test payment failed: ' + data.message);
+      }
+    } catch (error) {
+      console.error('Error with test payment:', error);
+      alert('Error with test payment confirmation');
+    }
+  };
+
+  // Cleanup interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (paymentCheckInterval) {
+        clearInterval(paymentCheckInterval);
+      }
+    };
+  }, [paymentCheckInterval]);
 
 
   return (
@@ -181,6 +268,16 @@ const Page = () => {
           </button>
 
           <div className="navbar-nav ms-auto">
+            <div className="d-flex align-items-center me-3">
+              <input
+                type="text"
+                className="form-control form-control-sm"
+                placeholder="Search menu items..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{width: '200px'}}
+              />
+            </div>
             <button
               className="btn btn-outline-light me-2 d-none d-sm-inline"
               onClick={() => setShowFeedback(true)}
@@ -272,9 +369,9 @@ const Page = () => {
                           <p className="mb-1"><strong>Date:</strong> {invoiceData.date}</p>
                         </div>
                         <div className="col-md-6 text-end">
-                          <div className="status-badge badge-success">
-                            <i className="bi bi-check-circle me-1"></i>
-                            Order Completed
+                          <div className={`status-badge ${invoiceData.paymentStatus === 'paid' ? 'badge-info' : 'badge-secondary'}`}>
+                            <i className={`bi ${invoiceData.paymentStatus === 'paid' ? 'bi-gear' : 'bi-clock'} me-1`}></i>
+                            {invoiceData.paymentStatus === 'paid' ? 'Order Preparing' : 'Order Pending'}
                           </div>
                         </div>
                       </div>
@@ -330,10 +427,22 @@ const Page = () => {
                         </div>
                       )}
                       <div className="mt-3 text-center">
-                        <span className="status-badge badge-warning">
-                          <i className="bi bi-clock me-1"></i>
-                          Payment Pending
+                        <span className={`status-badge ${invoiceData.paymentStatus === 'paid' ? 'badge-success' : 'badge-warning'}`}>
+                          <i className={`bi ${invoiceData.paymentStatus === 'paid' ? 'bi-check-circle' : 'bi-clock'} me-1`}></i>
+                          {invoiceData.paymentStatus === 'paid' ? 'Payment Received' : 'Payment Pending'}
                         </span>
+                        {invoiceData.paymentStatus !== 'paid' && (
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => testPaymentConfirmation(invoiceData.orderId)}
+                            >
+                              <i className="bi bi-play-circle me-1"></i>
+                              Test Payment (Demo)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -519,8 +628,8 @@ const Page = () => {
                     {selectedCategory === 'all' ? 'All Menu Items' : selectedCategory.split(' / ')[0]}
                     <span className="badge bg-primary ms-2 fs-6">
                       {selectedCategory === 'all'
-                        ? Object.values(menuData).flat().length
-                        : menuData[selectedCategory]?.length || 0
+                        ? Object.values(menuData).flatMap(([, items]) => items).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).length
+                        : (menuData[selectedCategory] || []).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).length
                       } items
                     </span>
                   </h4>
@@ -529,8 +638,8 @@ const Page = () => {
                 {/* Menu Items Grid */}
                 <div className="row g-3">
                   {(selectedCategory === 'all'
-                    ? Object.entries(menuData).flatMap(([, items]) => items)
-                    : menuData[selectedCategory] || []
+                    ? Object.entries(menuData).flatMap(([, items]) => items).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                    : (menuData[selectedCategory] || []).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
                   ).map((item) => {
                     const cartItem = cart.find(cartItem => cartItem.id === item.id);
                     const quantity = cartItem ? cartItem.quantity : 0;
