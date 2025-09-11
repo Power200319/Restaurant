@@ -40,6 +40,7 @@ class OrderController extends Controller
                 'table_number' => $request->table_number,
                 'total' => $total,
                 'status' => 'pending',
+                'payment_status' => 'pending',
             ]);
 
             foreach ($request->items as $item) {

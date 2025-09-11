@@ -21,3 +21,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::apiResource('menu-items', \App\Http\Controllers\MenuItemController::class);
 Route::apiResource('orders', \App\Http\Controllers\OrderController::class);
 Route::get('dashboard/stats', [\App\Http\Controllers\DashboardController::class, 'stats']);
+
+// Payment routes
+Route::post('payments/confirm', [\App\Http\Controllers\PaymentController::class, 'confirmPayment']);
+Route::get('payments/{orderId}/status', [\App\Http\Controllers\PaymentController::class, 'checkPaymentStatus']);
+Route::get('payments/{orderId}/qr-code', [\App\Http\Controllers\PaymentController::class, 'generateQRCode']);
+Route::post('payments/test-confirm/{orderId}', [\App\Http\Controllers\PaymentController::class, 'testPaymentConfirmation']);
